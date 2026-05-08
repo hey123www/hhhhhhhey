@@ -1,0 +1,1685 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>泪与息 · 情绪疗愈</title>
+<script async src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+<script async src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+<script async src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@200;300;400&family=Cinzel:wght@300;400&display=swap');
+
+:root {
+  --bg: #ffffff;
+  --ink: #1a1a1a;
+  --dim: #999999;
+  --faint: #e8e8e8;
+  --mist: rgba(240,244,248,0.85);
+  --accent: rgba(26,26,26,0.08);
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { width:100%; height:100%; overflow:hidden; background:var(--bg); font-family:'Noto Serif SC',serif; }
+
+#canvas { display:block; position:fixed; inset:0; width:100%; height:100%; }
+#camera-video { position:fixed; width:1px; height:1px; opacity:0; pointer-events:none; }
+#hand-canvas { position:fixed; inset:0; z-index:8; pointer-events:none; }
+
+/* ── MASTER UI ── */
+#ui { position:fixed; inset:0; z-index:10; pointer-events:none; }
+
+/* ── HEADER ── */
+#header {
+  position:fixed; top:0; left:0; right:0; z-index:11;
+  padding:22px 32px 18px;
+  display:flex; align-items:center; justify-content:space-between;
+  border-bottom:1px solid var(--faint);
+  background:rgba(255,255,255,0.92);
+  backdrop-filter:blur(8px);
+}
+.header-left { display:flex; flex-direction:column; gap:3px; }
+.header-title { font-size:1.1rem; font-weight:200; letter-spacing:0.4em; color:var(--ink); }
+.header-sub { font-size:0.52rem; letter-spacing:0.25em; color:var(--dim); }
+.header-right { display:flex; align-items:center; gap:16px; }
+
+/* ── ACT PROGRESS ── */
+.act-progress {
+  display:flex; gap:8px; align-items:center;
+}
+.act-node {
+  width:6px; height:6px; border-radius:50%;
+  background:var(--faint); border:1px solid var(--dim);
+  transition:all 0.4s; cursor:default;
+}
+.act-node.active { background:var(--ink); border-color:var(--ink); transform:scale(1.3); }
+.act-node.done { background:var(--dim); border-color:var(--dim); }
+.act-label { font-size:0.52rem; letter-spacing:0.2em; color:var(--dim); }
+
+/* ── SOUND BTN ── */
+.icon-btn {
+  width:36px; height:36px; border-radius:50%;
+  border:1px solid var(--faint);
+  background:transparent; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  transition:all 0.3s; pointer-events:all;
+}
+.icon-btn:hover { border-color:var(--ink); box-shadow:0 2px 8px rgba(0,0,0,0.08); }
+.icon-btn svg { width:14px; height:14px; fill:none; stroke:var(--ink); stroke-width:1.5; }
+.icon-btn.muted { opacity:0.4; }
+
+/* ── RIGHT SIDEBAR ── */
+#sidebar {
+  position:fixed; right:0; top:70px; bottom:0; width:200px; z-index:11;
+  background:rgba(255,255,255,0.92); backdrop-filter:blur(8px);
+  border-left:1px solid var(--faint);
+  padding:20px 16px; display:flex; flex-direction:column; gap:20px;
+  pointer-events:all; overflow:hidden;
+}
+
+.sidebar-section { display:flex; flex-direction:column; gap:8px; }
+.sidebar-label {
+  font-size:0.5rem; letter-spacing:0.25em; color:var(--dim);
+  text-transform:uppercase; padding-bottom:4px;
+  border-bottom:1px solid var(--faint);
+}
+
+/* Sliders */
+.slider-row { display:flex; flex-direction:column; gap:5px; }
+.slider-name { font-size:0.55rem; letter-spacing:0.15em; color:var(--ink); display:flex; justify-content:space-between; }
+input[type=range] {
+  width:100%; height:2px; background:var(--faint);
+  border-radius:2px; outline:none; -webkit-appearance:none; appearance:none; cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance:none; appearance:none;
+  width:12px; height:12px; background:var(--ink); border-radius:50%; cursor:pointer;
+}
+input[type=range]::-moz-range-thumb {
+  width:12px; height:12px; background:var(--ink); border-radius:50%; border:none; cursor:pointer;
+}
+
+/* Camera preview */
+#cam-preview {
+  position:relative; width:168px; height:120px;
+  background:#000; border:1px solid var(--faint); border-radius:4px; overflow:hidden;
+  flex-shrink:0;
+}
+#cam-preview-video { width:100%; height:100%; object-fit:cover; transform:scaleX(-1); }
+.cam-status { position:absolute; bottom:6px; left:8px; font-size:0.45rem; letter-spacing:0.15em; color:rgba(255,255,255,0.6); }
+.cam-dot { display:inline-block; width:4px; height:4px; border-radius:50%; background:#888; margin-right:4px; }
+.cam-dot.live { background:#fff; animation:pulse 2s ease-in-out infinite; }
+
+/* Tear collector */
+#tear-collector {
+  flex:1; display:flex; flex-direction:column; gap:6px;
+  border:1px solid var(--faint); border-radius:4px; padding:10px; background:rgba(248,248,248,0.5);
+}
+.collector-vessel {
+  flex:1; border:1px solid var(--faint); border-radius:2px;
+  position:relative; overflow:hidden; background:#fff; min-height:60px;
+}
+.collector-fill {
+  position:absolute; bottom:0; left:0; right:0;
+  background:linear-gradient(to top, rgba(26,26,26,0.15), rgba(26,26,26,0.05));
+  transition:height 0.5s ease; height:0%;
+}
+.collector-drop {
+  position:absolute; width:100%; text-align:center;
+  font-size:0.55rem; letter-spacing:0.1em; color:var(--dim);
+  top:50%; transform:translateY(-50%);
+}
+.collector-count {
+  font-size:1.4rem; font-weight:200; color:var(--ink); text-align:center; letter-spacing:0.05em;
+}
+.collector-unit { font-size:0.45rem; letter-spacing:0.2em; color:var(--dim); text-align:center; }
+
+/* ── LEFT SIDEBAR ── */
+#left-panel {
+  position:fixed; left:0; top:70px; bottom:0; width:180px; z-index:11;
+  background:rgba(255,255,255,0.92); backdrop-filter:blur(8px);
+  border-right:1px solid var(--faint);
+  padding:20px 16px; display:flex; flex-direction:column; gap:16px;
+  pointer-events:all;
+}
+
+.hint-box {
+  border:1px solid var(--faint); border-radius:4px; padding:10px; background:rgba(248,248,248,0.5);
+}
+.hint-title { font-size:0.48rem; letter-spacing:0.2em; color:var(--dim); margin-bottom:8px; }
+.hint-item {
+  font-size:0.55rem; font-weight:200; line-height:1.8; color:var(--ink); letter-spacing:0.05em;
+  border-bottom:1px solid var(--faint); padding:5px 0;
+}
+.hint-item:last-child { border-bottom:none; }
+.hint-icon { font-size:0.7rem; margin-right:4px; }
+
+.quote-box {
+  border:1px solid var(--faint); border-radius:4px; padding:10px; background:rgba(248,248,248,0.5);
+  flex:1;
+}
+.quote-text {
+  font-size:0.6rem; font-weight:200; line-height:2; color:var(--ink);
+  letter-spacing:0.05em; font-style:italic;
+}
+.quote-src { font-size:0.45rem; letter-spacing:0.15em; color:var(--dim); margin-top:8px; text-align:right; }
+
+/* ── BOTTOM BAR ── */
+#bottom-bar {
+  position:fixed; bottom:0; left:0; right:0; z-index:11;
+  padding:14px 220px;
+  display:flex; align-items:center; justify-content:center; gap:20px;
+  background:rgba(255,255,255,0.92); backdrop-filter:blur(8px);
+  border-top:1px solid var(--faint);
+}
+
+.act-btn {
+  padding:10px 28px;
+  border:1.5px solid var(--ink);
+  border-radius:40px;
+  background:transparent; color:var(--ink);
+  font-family:'Noto Serif SC',serif; font-weight:200;
+  font-size:0.7rem; letter-spacing:0.2em;
+  cursor:pointer; transition:all 0.4s; pointer-events:all;
+}
+.act-btn:hover { background:var(--ink); color:#fff; box-shadow:0 4px 12px rgba(0,0,0,0.15); }
+.act-btn.primary { background:var(--ink); color:#fff; }
+.act-btn.primary:hover { background:#333; }
+
+.bottom-hint { font-size:0.55rem; letter-spacing:0.2em; color:var(--dim); }
+
+/* ── BREATH GUIDE (act3) ── */
+#breath-guide {
+  position:fixed; bottom:70px; left:50%; transform:translateX(-50%);
+  z-index:11; text-align:center; pointer-events:none;
+  display:none;
+}
+#breath-label {
+  font-size:0.8rem; font-weight:200; letter-spacing:0.4em;
+  color:rgba(255,255,255,0.8);
+  text-shadow:0 0 20px rgba(255,255,255,0.3);
+}
+#breath-timer {
+  font-size:0.55rem; letter-spacing:0.25em; color:rgba(255,255,255,0.45);
+  margin-top:6px;
+}
+
+/* ── FLOATING TEXT ── */
+.float-text {
+  position:fixed; z-index:14; pointer-events:none;
+  text-align:center; padding:8px 16px;
+  font-size:clamp(0.75rem, 1.8vw, 1rem);
+  font-weight:200; letter-spacing:0.2em; color:var(--ink);
+  border:1px solid rgba(26,26,26,0.15); border-radius:2px;
+  background:rgba(255,255,255,0.85);
+  backdrop-filter:blur(4px);
+  animation:floatUp 4.5s ease-out forwards;
+}
+.float-text.dark { color:rgba(255,255,255,0.8); border-color:rgba(255,255,255,0.15); background:rgba(0,0,0,0.4); }
+@keyframes floatUp {
+  0% { opacity:0; transform:translateY(10px); }
+  12% { opacity:1; }
+  80% { opacity:0.9; }
+  100% { opacity:0; transform:translateY(-30px); }
+}
+
+/* ── COMPLETION ── */
+#completion-overlay {
+  position:fixed; inset:0; z-index:25;
+  background:#000;
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:30px;
+  opacity:0; pointer-events:none; transition:opacity 1.5s;
+}
+#completion-overlay.show { opacity:1; pointer-events:all; }
+
+.completion-title {
+  font-size:clamp(1.2rem, 3vw, 2rem); font-weight:200;
+  letter-spacing:0.5em; color:rgba(255,255,255,0.75);
+}
+.completion-sub { font-size:0.6rem; letter-spacing:0.3em; color:rgba(255,255,255,0.3); }
+
+.stats-grid {
+  display:grid; grid-template-columns:1fr 1fr;
+  gap:16px; max-width:480px; width:90%;
+}
+.stat-card {
+  background:rgba(255,255,255,0.06);
+  border:1px solid rgba(255,255,255,0.1);
+  border-radius:4px; padding:20px 16px; text-align:center;
+}
+.stat-num { font-size:2.2rem; font-weight:200; color:#fff; letter-spacing:0.05em; }
+.stat-desc { font-size:0.5rem; letter-spacing:0.2em; color:rgba(255,255,255,0.4); margin-top:6px; }
+.stat-poem {
+  font-size:0.55rem; font-weight:200; letter-spacing:0.1em;
+  color:rgba(255,255,255,0.35); font-style:italic; margin-top:8px; line-height:1.8;
+}
+.stat-chart {
+  display:flex; align-items:flex-end; gap:2px; height:30px; margin-top:8px; justify-content:center;
+}
+.chart-bar { width:4px; border-radius:2px; background:rgba(255,255,255,0.25); transition:height 0.8s ease; }
+
+/* ── TRANSITIONS ── */
+#fade-overlay {
+  position:fixed; inset:0; z-index:30; background:#fff;
+  opacity:0; pointer-events:none; transition:opacity 1.2s ease;
+}
+#fade-overlay.dark { background:#000; }
+#fade-overlay.active { opacity:1; pointer-events:all; }
+
+@keyframes pulse { 0%,100%{opacity:0.5} 50%{opacity:1} }
+</style>
+</head>
+<body>
+
+<video id="camera-video" playsinline></video>
+<canvas id="hand-canvas"></canvas>
+<canvas id="canvas"></canvas>
+
+<!-- ── HEADER ── -->
+<div id="ui">
+<div id="header">
+  <div class="header-left">
+    <div class="header-title">泪 与 息</div>
+    <div class="header-sub">情绪性流泪 · 艺术疗愈交互 · 青年群体</div>
+  </div>
+  <div class="header-right">
+    <div class="act-progress">
+      <span class="act-label">序幕</span>
+      <div class="act-node active" id="node1"></div>
+      <div class="act-node" id="node2"></div>
+      <div class="act-node" id="node3"></div>
+      <div class="act-node" id="node4"></div>
+      <span class="act-label">尾声</span>
+    </div>
+    <button class="icon-btn" id="sound-btn" onclick="toggleSound()" title="音效">
+      <svg id="sicon-on" viewBox="0 0 24 24"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 010 7.07"/><path d="M19.07 4.93a10 10 0 010 14.14"/></svg>
+      <svg id="sicon-off" style="display:none" viewBox="0 0 24 24"><path d="M11 5L6 9H2v6h4l5 4V5z"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- ── LEFT PANEL ── -->
+<div id="left-panel">
+  <div class="sidebar-label">引导</div>
+  <div class="hint-box" id="hint-box">
+    <div class="hint-title">当前交互</div>
+    <div class="hint-item" id="hint1"><span class="hint-icon">✦</span>在空中挥手擦开水雾</div>
+    <div class="hint-item" id="hint2"><span class="hint-icon">◎</span>触碰诗句，感受文字</div>
+    <div class="hint-item" id="hint3"><span class="hint-icon">→</span>点击底部按钮继续</div>
+  </div>
+  <div class="quote-box">
+    <div class="quote-text" id="quote-text">当身体不是我们<br>「拥有」的东西，<br>而是我们「是」的东西。</div>
+    <div class="quote-src">— 梅洛·庞蒂</div>
+  </div>
+</div>
+
+<!-- ── RIGHT SIDEBAR ── -->
+<div id="sidebar">
+  <div class="sidebar-label">控制</div>
+  <div class="sidebar-section">
+    <div class="slider-row">
+      <div class="slider-name"><span>下落速度</span><span id="speed-val">50</span></div>
+      <input type="range" id="speed-slider" min="1" max="100" value="50" oninput="onSpeedChange(this.value)">
+    </div>
+    <div class="slider-row">
+      <div class="slider-name"><span>泪滴大小</span><span id="size-val">50</span></div>
+      <input type="range" id="size-slider" min="20" max="100" value="50" oninput="onSizeChange(this.value)">
+    </div>
+  </div>
+
+  <div class="sidebar-label">泪水收集器</div>
+  <div id="tear-collector">
+    <div class="collector-count" id="collector-count">0</div>
+    <div class="collector-unit">滴 · 泪水</div>
+    <div class="collector-vessel">
+      <div class="collector-fill" id="collector-fill"></div>
+      <div class="collector-drop" id="collector-label">尚未收集</div>
+    </div>
+  </div>
+
+  <div class="sidebar-label">摄像头</div>
+  <div id="cam-preview">
+    <video id="cam-preview-video" playsinline></video>
+    <div class="cam-status"><span class="cam-dot" id="cam-dot"></span><span id="cam-text">初始化</span></div>
+  </div>
+</div>
+
+<!-- ── BOTTOM BAR ── -->
+<div id="bottom-bar">
+  <span class="bottom-hint" id="bottom-hint">用手指擦开水雾，听听身体想说什么</span>
+  <button class="act-btn primary" id="main-btn" onclick="handleMainBtn()">听听身体在说什么？</button>
+</div>
+
+<!-- ── BREATH GUIDE ── -->
+<div id="breath-guide">
+  <div id="breath-label">准备</div>
+  <div id="breath-timer">·</div>
+</div>
+</div><!-- /ui -->
+
+<!-- ── COMPLETION ── -->
+<div id="completion-overlay">
+  <div class="completion-title">泪与息的印记</div>
+  <div class="completion-sub">本次疗愈于此留存</div>
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-num" id="stat1">0</div>
+      <div class="stat-desc">接纳的泪水</div>
+      <div class="stat-poem" id="stat-poem">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" id="stat2">0</div>
+      <div class="stat-desc">呼吸的深度</div>
+      <div class="stat-chart" id="stat-chart"></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" id="stat3">0</div>
+      <div class="stat-desc">心跳的放缓 bpm↓</div>
+      <div class="stat-poem" style="margin-top:8px">呼吸放缓，心跳随之沉静</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" id="stat4">0%</div>
+      <div class="stat-desc">情绪的驱散</div>
+      <div class="stat-poem" style="margin-top:8px">每一次握拳，是释放的练习</div>
+    </div>
+  </div>
+  <button class="act-btn" onclick="returnToAct1()" style="border-color:rgba(255,255,255,0.3);color:rgba(255,255,255,0.7);">回到诗里</button>
+</div>
+
+<div id="fade-overlay"></div>
+
+<script>
+// ═══════════════════════════════════════
+//  SETUP
+// ═══════════════════════════════════════
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const handCanvas = document.getElementById('hand-canvas');
+const hctx = handCanvas.getContext('2d');
+let W, H;
+
+function resize() {
+  W = canvas.width = handCanvas.width = window.innerWidth;
+  H = canvas.height = handCanvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ═══════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════
+let act = 1;
+let frame = 0;
+let soundOn = true;
+let audioCtx = null;
+let tipPos = [];           // fingertip world positions
+let handState = 'none';    // open / fist / none
+let tearSpeed = 0.5;
+let tearSize = 0.5;
+let collectedCount = 0;
+let fistCount = 0;
+let breathCount = 0;
+let lastBreathAct = -1;
+let triggeredPoems = [];
+let act2TouhedCount = 0;
+
+const CONTENT_LEFT = 180;
+const CONTENT_RIGHT = 200;
+const CONTENT_TOP = 70;
+const CONTENT_BOTTOM = 60;
+
+function contentCX() { return CONTENT_LEFT + (W - CONTENT_LEFT - CONTENT_RIGHT) / 2; }
+function contentCY() { return CONTENT_TOP + (H - CONTENT_TOP - CONTENT_BOTTOM) / 2; }
+
+// ═══════════════════════════════════════
+//  SLIDERS
+// ═══════════════════════════════════════
+function onSpeedChange(v) {
+  tearSpeed = v / 100;
+  document.getElementById('speed-val').textContent = v;
+}
+function onSizeChange(v) {
+  tearSize = v / 100;
+  document.getElementById('size-val').textContent = v;
+}
+
+// ═══════════════════════════════════════
+//  AUDIO — Full music system
+// ═══════════════════════════════════════
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = 0.85;
+  masterGain.connect(audioCtx.destination);
+  // Shared soft reverb
+  makeReverb(3.0).then(r => { reverbNode = r; });
+}
+
+let masterGain = null;
+let reverbNode = null;
+
+async function makeReverb(duration) {
+  const rate = audioCtx.sampleRate;
+  const len  = rate * duration;
+  const buf  = audioCtx.createBuffer(2, len, rate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    for (let i = 0; i < len; i++)
+      d[i] = (Math.random()*2-1) * Math.pow(1 - i/len, 2.8);
+  }
+  const conv = audioCtx.createConvolver();
+  conv.buffer = buf;
+  conv.connect(masterGain);
+  return conv;
+}
+
+function dest() { return reverbNode || masterGain; }
+
+function toggleSound() {
+  soundOn = !soundOn;
+  document.getElementById('sound-btn').classList.toggle('muted', !soundOn);
+  document.getElementById('sicon-on').style.display = soundOn ? '' : 'none';
+  document.getElementById('sicon-off').style.display = soundOn ? 'none' : '';
+  if (masterGain) {
+    masterGain.gain.cancelScheduledValues(audioCtx.currentTime);
+    masterGain.gain.linearRampToValueAtTime(soundOn ? 0.85 : 0, audioCtx.currentTime + 0.5);
+  }
+}
+
+// Generic tone
+function tone(freq, dur, vol=0.06, type='sine', detune=0, useDry=false) {
+  if (!soundOn || !audioCtx) return null;
+  const now = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  const f = audioCtx.createBiquadFilter();
+  f.type='lowpass'; f.frequency.value=2200;
+  o.type=type; o.frequency.value=freq; o.detune.value=detune;
+  g.gain.setValueAtTime(0, now);
+  g.gain.linearRampToValueAtTime(vol, now+0.15);
+  g.gain.exponentialRampToValueAtTime(0.001, now+dur);
+  o.connect(f); f.connect(g);
+  g.connect(useDry ? masterGain : dest());
+  o.start(now); o.stop(now+dur+0.05);
+  return { osc:o, gain:g };
+}
+
+// ── ACT 1: Ambient misty drone ──────────────────────
+let act1DroneNodes = [];
+let act1DroneInterval = null;
+
+function startAct1Music() {
+  if (!soundOn || !audioCtx) return;
+  stopAllMusic();
+  // Slow evolving drone: two detuned sine waves + subtle high shimmer
+  const now = audioCtx.currentTime;
+  const dronePairs = [[82.4, 4], [110, 2], [164.8, 1]]; // E2, A2, E3
+  act1DroneNodes = [];
+  dronePairs.forEach(([freq, vol]) => {
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    const f = audioCtx.createBiquadFilter();
+    f.type='lowpass'; f.frequency.value=500;
+    o.type='sine'; o.frequency.value=freq;
+    o.detune.value=(Math.random()-0.5)*8;
+    g.gain.setValueAtTime(0,now);
+    g.gain.linearRampToValueAtTime(vol*0.018, now+3);
+    o.connect(f); f.connect(g); g.connect(dest());
+    o.start(now);
+    act1DroneNodes.push({o,g});
+  });
+  // Occasional mist shimmer
+  act1DroneInterval = setInterval(() => {
+    if (!soundOn || act!==1) return;
+    const shimmerFreqs=[880,1108,1320,1760];
+    const sf=shimmerFreqs[Math.floor(Math.random()*shimmerFreqs.length)];
+    tone(sf, 2.5, 0.008, 'sine', (Math.random()-0.5)*12);
+  }, 3500);
+}
+
+// ── ACT 2: Gentle piano ──────────────────────────────
+// C pentatonic: C4 D E G A C5 D5 E5
+const PIANO_SCALE = [261.63,293.66,329.63,392,440,523.25,587.33,659.25];
+let pianoInterval = null;
+let pianoMelodyIdx = 0;
+// A soft repeating melody pattern (indices into PIANO_SCALE)
+const MELODY = [0,2,1,4,3,2,0,5,4,3,2,1,4,0,3,2];
+
+function playPianoNote(freq, delay=0) {
+  if (!soundOn || !audioCtx) return;
+  const now = audioCtx.currentTime + delay;
+  // Body: two oscillators (fundamental + soft 2nd harmonic)
+  [1,2].forEach((mult,i) => {
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    const f = audioCtx.createBiquadFilter();
+    f.type='lowpass'; f.frequency.value=1800-i*600;
+    o.type='sine'; o.frequency.value=freq*mult;
+    o.detune.value=(Math.random()-0.5)*3;
+    const vol = i===0 ? 0.055 : 0.018;
+    g.gain.setValueAtTime(0,now);
+    g.gain.linearRampToValueAtTime(vol, now+0.02);
+    g.gain.setValueAtTime(vol, now+0.12);
+    g.gain.exponentialRampToValueAtTime(0.001, now+2.4);
+    o.connect(f); f.connect(g); g.connect(dest());
+    o.start(now); o.stop(now+2.5);
+  });
+}
+
+function startAct2Music() {
+  if (!soundOn || !audioCtx) return;
+  stopAllMusic();
+  pianoMelodyIdx = 0;
+  // Play melody notes with gentle swing timing
+  const noteDuration = 1.35; // seconds between notes
+  function scheduleNext() {
+    if (act!==2 || !soundOn) return;
+    const freq = PIANO_SCALE[MELODY[pianoMelodyIdx % MELODY.length]];
+    // Occasionally drop an octave for depth
+    const octave = Math.random()<0.15 ? 0.5 : 1;
+    playPianoNote(freq*octave);
+    pianoMelodyIdx++;
+    // Occasional chord (two notes together)
+    if (pianoMelodyIdx % 5 === 0) {
+      const cf = PIANO_SCALE[MELODY[(pianoMelodyIdx+2) % MELODY.length]];
+      playPianoNote(cf, 0.04);
+    }
+    pianoInterval = setTimeout(scheduleNext, noteDuration*1000 + (Math.random()-0.5)*200);
+  }
+  scheduleNext();
+}
+
+// ── ACT 3: Full meditation audio system ──────────────
+
+// Singing bowl — triggered at cycle boundary
+function bowlTone(phase) {
+  if (!soundOn || !audioCtx) return;
+  const freqs = [136, 172, 194, 228];
+  const f = freqs[phase % freqs.length];
+  // Three harmonic partials: fundamental, 2nd, 3rd
+  tone(f,     5.5, 0.09, 'sine', (Math.random()-0.5)*4);
+  tone(f*2,   4.0, 0.032,'sine');
+  tone(f*3,   2.5, 0.010,'sine');
+  // Soft attack shimmer
+  setTimeout(()=>tone(f*4, 1.5, 0.005,'sine'), 200);
+}
+
+// Inhale tone — rising pitch swell (breath coming in)
+let inhaleNode = null;
+function startInhaleTone() {
+  if (!soundOn || !audioCtx) return;
+  stopInhaleTone();
+  const now = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  const filt = audioCtx.createBiquadFilter();
+  filt.type = 'bandpass'; filt.frequency.value = 320; filt.Q.value = 1.8;
+  o.type = 'sine';
+  // Pitch rises gently from 160Hz to 220Hz over 4 seconds
+  o.frequency.setValueAtTime(160, now);
+  o.frequency.linearRampToValueAtTime(220, now + 4);
+  g.gain.setValueAtTime(0, now);
+  g.gain.linearRampToValueAtTime(0.055, now + 0.6);
+  g.gain.setValueAtTime(0.055, now + 3.2);
+  g.gain.linearRampToValueAtTime(0, now + 4);
+  o.connect(filt); filt.connect(g); g.connect(dest());
+  o.start(now);
+  inhaleNode = { o, g };
+}
+function stopInhaleTone() {
+  if (!inhaleNode) return;
+  try {
+    inhaleNode.g.gain.cancelScheduledValues(audioCtx.currentTime);
+    inhaleNode.g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.3);
+    inhaleNode.o.stop(audioCtx.currentTime + 0.35);
+  } catch(e){}
+  inhaleNode = null;
+}
+
+// Hold tone — sustained mid-tone hum (body full of air)
+let holdNode = null;
+function startHoldTone() {
+  if (!soundOn || !audioCtx) return;
+  stopHoldTone();
+  const now = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = 'sine'; o.frequency.value = 220;
+  o.detune.value = (Math.random()-0.5)*6;
+  g.gain.setValueAtTime(0, now);
+  g.gain.linearRampToValueAtTime(0.038, now + 0.25);
+  // Very gentle pulse during hold
+  const lfo = audioCtx.createOscillator();
+  const lfoG = audioCtx.createGain();
+  lfo.frequency.value = 0.4; lfoG.gain.value = 0.008;
+  lfo.connect(lfoG); lfoG.connect(g.gain);
+  o.connect(g); g.connect(dest());
+  lfo.start(now); o.start(now);
+  holdNode = { o, g, lfo, lfoG };
+}
+function stopHoldTone() {
+  if (!holdNode) return;
+  try {
+    holdNode.g.gain.cancelScheduledValues(audioCtx.currentTime);
+    holdNode.g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.3);
+    holdNode.o.stop(audioCtx.currentTime + 0.35);
+    holdNode.lfo.stop(audioCtx.currentTime + 0.35);
+  } catch(e){}
+  holdNode = null;
+}
+
+// Exhale tone — descending pitch sigh (breath releasing)
+let exhaleNode = null;
+function startExhaleTone() {
+  if (!soundOn || !audioCtx) return;
+  stopExhaleTone();
+  const now = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  const filt = audioCtx.createBiquadFilter();
+  filt.type = 'lowpass'; filt.frequency.value = 600;
+  o.type = 'sine';
+  // Pitch descends 220→140 over 4s — the sigh
+  o.frequency.setValueAtTime(220, now);
+  o.frequency.linearRampToValueAtTime(140, now + 4);
+  g.gain.setValueAtTime(0, now);
+  g.gain.linearRampToValueAtTime(0.048, now + 0.5);
+  g.gain.setValueAtTime(0.048, now + 3.0);
+  g.gain.linearRampToValueAtTime(0, now + 4);
+  o.connect(filt); filt.connect(g); g.connect(dest());
+  o.start(now);
+  exhaleNode = { o, g };
+}
+function stopExhaleTone() {
+  if (!exhaleNode) return;
+  try {
+    exhaleNode.g.gain.cancelScheduledValues(audioCtx.currentTime);
+    exhaleNode.g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.3);
+    exhaleNode.o.stop(audioCtx.currentTime + 0.35);
+  } catch(e){}
+  exhaleNode = null;
+}
+
+// Rest tone — near-silence, just a faint low hum
+let restNode = null;
+function startRestTone() {
+  if (!soundOn || !audioCtx) return;
+  stopRestTone();
+  const now = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = 'sine'; o.frequency.value = 110;
+  g.gain.setValueAtTime(0, now);
+  g.gain.linearRampToValueAtTime(0.015, now + 0.5);
+  o.connect(g); g.connect(dest());
+  o.start(now);
+  restNode = { o, g };
+}
+function stopRestTone() {
+  if (!restNode) return;
+  try {
+    restNode.g.gain.cancelScheduledValues(audioCtx.currentTime);
+    restNode.g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.4);
+    restNode.o.stop(audioCtx.currentTime + 0.45);
+  } catch(e){}
+  restNode = null;
+}
+
+function stopAllBreathTones() {
+  stopInhaleTone(); stopHoldTone(); stopExhaleTone(); stopRestTone();
+}
+
+// ── ACT 2: Bright raindrop — triggered when touching 泪 ──
+function rainDrop() {
+  if (!soundOn || !audioCtx) return;
+  const now = audioCtx.currentTime;
+
+  // Layer 1: crisp high-frequency click (bright attack)
+  const click = audioCtx.createOscillator();
+  const clickG = audioCtx.createGain();
+  const clickF = audioCtx.createBiquadFilter();
+  clickF.type = 'highpass'; clickF.frequency.value = 2200 + Math.random()*1800;
+  click.type = 'sine';
+  click.frequency.value = 1800 + Math.random()*1200;
+  clickG.gain.setValueAtTime(0.18, now);
+  clickG.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+  click.connect(clickF); clickF.connect(clickG); clickG.connect(masterGain);
+  click.start(now); click.stop(now + 0.13);
+
+  // Layer 2: soft round body (the drop landing)
+  const body = audioCtx.createOscillator();
+  const bodyG = audioCtx.createGain();
+  body.type = 'sine';
+  body.frequency.setValueAtTime(900 + Math.random()*400, now);
+  body.frequency.exponentialRampToValueAtTime(300 + Math.random()*200, now + 0.25);
+  bodyG.gain.setValueAtTime(0.10, now + 0.01);
+  bodyG.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+  body.connect(bodyG); bodyG.connect(masterGain);
+  body.start(now + 0.01); body.stop(now + 0.3);
+
+  // Layer 3: tiny shimmer tail
+  const tail = audioCtx.createOscillator();
+  const tailG = audioCtx.createGain();
+  tail.type = 'sine'; tail.frequency.value = 3200 + Math.random()*1600;
+  tailG.gain.setValueAtTime(0.025, now + 0.05);
+  tailG.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+  tail.connect(tailG); tailG.connect(masterGain);
+  tail.start(now + 0.05); tail.stop(now + 0.42);
+}
+
+// Stop all
+function stopAllMusic() {
+  // Fade drone
+  act1DroneNodes.forEach(({g}) => {
+    try {
+      g.gain.cancelScheduledValues(audioCtx.currentTime);
+      g.gain.linearRampToValueAtTime(0, audioCtx.currentTime+1.2);
+    } catch(e){}
+  });
+  act1DroneNodes = [];
+  clearInterval(act1DroneInterval); act1DroneInterval=null;
+  clearTimeout(pianoInterval); pianoInterval=null;
+  stopAllBreathTones();
+}
+
+let ambInterval = null;
+function startAmbientRain() {
+  if (ambInterval) return;
+  // Occasional soft mist rain drops behind piano
+  ambInterval = setInterval(() => {
+    if (!soundOn || act!==2) return;
+    if (Math.random()<0.3) rainDrop();
+  }, 1800 + Math.random()*1200);
+}
+function stopAmbientRain() { clearInterval(ambInterval); ambInterval=null; }
+
+// ═══════════════════════════════════════
+//  MEDIAPIPE
+// ═══════════════════════════════════════
+let hands = null, camera = null;
+let handLandmarks = [];
+
+async function initMediaPipe() {
+  hands = new Hands({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+  hands.setOptions({ maxNumHands:2, modelComplexity:1, minDetectionConfidence:0.7, minTrackingConfidence:0.5 });
+  hands.onResults(onHandResults);
+  const vid = document.getElementById('camera-video');
+  camera = new Camera(vid, {
+    onFrame: async () => { if (hands) await hands.send({ image: vid }); },
+    width:1280, height:720,
+  });
+  camera.start()
+    .then(() => {
+      document.getElementById('cam-dot').classList.add('live');
+      document.getElementById('cam-text').textContent = '已连接';
+      const prev = document.getElementById('cam-preview-video');
+      prev.srcObject = vid.srcObject;
+      prev.play();
+    })
+    .catch(() => {
+      document.getElementById('cam-text').textContent = '无摄像头';
+    });
+}
+
+function onHandResults(r) {
+  handLandmarks = r.multiHandLandmarks || [];
+  tipPos = [];
+  handLandmarks.forEach(lms => {
+    [4,8,12,16,20].forEach(i => {
+      tipPos.push({ x: lms[i].x * W, y: lms[i].y * H });
+    });
+    detectGesture(lms);
+  });
+  drawHandOverlay();
+}
+
+function detectGesture(lms) {
+  const wrist = lms[0];
+  let extended = 0;
+  [[4,3],[8,6],[12,10],[16,14],[20,18]].forEach(([tip,base]) => {
+    const dt = Math.hypot(lms[tip].x-wrist.x, lms[tip].y-wrist.y);
+    const db = Math.hypot(lms[base].x-wrist.x, lms[base].y-wrist.y);
+    if (dt > db*1.05) extended++;
+  });
+  const prev = handState;
+  handState = extended<=1 ? 'fist' : extended>=4 ? 'open' : 'neutral';
+  if (handState==='fist' && prev!=='fist') fistCount++;
+}
+
+function drawHandOverlay() {
+  hctx.clearRect(0, 0, W, H);
+  handLandmarks.forEach(lms => {
+    // Skeleton
+    (Hands.HAND_CONNECTIONS||[]).forEach(([a,b]) => {
+      const p1=lms[a], p2=lms[b];
+      hctx.beginPath();
+      hctx.moveTo(p1.x*W, p1.y*H);
+      hctx.lineTo(p2.x*W, p2.y*H);
+      hctx.strokeStyle = act===3 ? 'rgba(255,255,255,0.12)' : 'rgba(26,26,26,0.12)';
+      hctx.lineWidth = 1;
+      hctx.stroke();
+    });
+    // Fingertip rings
+    [4,8,12,16,20].forEach(i => {
+      const lm = lms[i];
+      const x = lm.x*W, y = lm.y*H;
+      const col = act===3 ? 'rgba(255,255,255,' : 'rgba(26,26,26,';
+      // Outer ring
+      hctx.beginPath();
+      hctx.arc(x, y, 20, 0, Math.PI*2);
+      hctx.strokeStyle = col+'0.25)';
+      hctx.lineWidth = 1.5;
+      hctx.stroke();
+      // Inner ring
+      hctx.beginPath();
+      hctx.arc(x, y, 12, 0, Math.PI*2);
+      hctx.strokeStyle = col+'0.4)';
+      hctx.lineWidth = 1;
+      hctx.stroke();
+      // Dot
+      hctx.beginPath();
+      hctx.arc(x, y, 3, 0, Math.PI*2);
+      hctx.fillStyle = col+'0.6)';
+      hctx.fill();
+    });
+  });
+}
+
+// ═══════════════════════════════════════
+//  ACT 1 — Water mist & poems
+// ═══════════════════════════════════════
+const poems = [
+  '当语言走到尽头，身体开始说话',
+  '泪是身体说出的，最诚实的句子',
+  '哭泣不是崩溃，是感受的觉醒',
+  '你感受到的，比你说出来的更真实',
+  '允许眼泪，是允许自己存在',
+  '身体记住了，所有说不出口的委屈',
+  '流泪的瞬间，我们回到了自己',
+  '在感受里，找到回家的路',
+  '每滴泪水，都是生命在证明自己',
+  '情绪不是敌人，是身体的信使',
+];
+
+class MistPoem {
+  constructor(text, x, y) {
+    this.text = text;
+    this.baseX = x; this.baseY = y;
+    this.x = x; this.y = y;
+    this.fontSize = 13 + Math.random()*6;
+    this.alpha = 0.18 + Math.random()*0.12;
+    this.revealed = 0;
+    this.revealDecay = 0;
+    this.phase = Math.random()*Math.PI*2;
+  }
+  update() {
+    const t = frame*0.006;
+    this.x = this.baseX + Math.sin(t+this.phase)*10;
+    this.y = this.baseY + Math.cos(t*0.7+this.phase)*6;
+    this.revealDecay = Math.max(0, this.revealDecay-0.008);
+    this.revealed = Math.max(0, this.revealed - 0.005);
+    // Check hand proximity
+    tipPos.forEach(tp => {
+      const d = Math.hypot(tp.x-this.x, tp.y-this.y);
+      if (d < 90) {
+        this.revealed = Math.min(1, this.revealed+0.08);
+        this.revealDecay = 1;
+      }
+    });
+  }
+  draw() {
+    const op = this.alpha + this.revealed*(1-this.alpha);
+    ctx.save();
+    ctx.globalAlpha = op;
+    ctx.font = `200 ${this.fontSize}px 'Noto Serif SC'`;
+    ctx.fillStyle = '#1a1a1a';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(this.text, this.x, this.y);
+    ctx.restore();
+  }
+}
+
+let mistPoems = [];
+
+// ── Glass condensation droplet system ──────────────────
+class GlassDrop {
+  constructor() { this.spawn(); }
+  spawn() {
+    this.x  = CONTENT_LEFT + Math.random()*(W-CONTENT_LEFT-CONTENT_RIGHT);
+    this.y  = CONTENT_TOP  + Math.random()*(H-CONTENT_TOP-CONTENT_BOTTOM);
+    // Sizes cluster: mostly tiny (0.5-4px), occasional large (6-14px)
+    this.r  = Math.random()<0.12
+                ? 6 + Math.random()*8      // large
+                : 0.5 + Math.random()*3.5; // tiny
+    this.grown   = 0;          // 0→1 grow-in
+    this.slide   = false;
+    this.slideDy = 0;
+    this.trailY  = this.y;
+    this.opacity = 0.55 + Math.random()*0.3;
+    this.phase   = Math.random()*Math.PI*2;
+    this.life    = 1;
+    this.cleared = 0;          // how much hand-cleared (0→1)
+  }
+  update() {
+    // Grow in
+    this.grown = Math.min(1, this.grown+0.008);
+    // Occasional slide (large drops only)
+    if (this.r>5 && !this.slide && Math.random()<0.0004) {
+      this.slide=true; this.slideDy=0.15+Math.random()*0.25;
+    }
+    if (this.slide) {
+      this.trailY = this.y;
+      this.y += this.slideDy;
+      this.slideDy = Math.min(1.2, this.slideDy*1.01);
+      if (this.y > H-CONTENT_BOTTOM+20) this.spawn();
+    }
+    // Gentle sway
+    this.x += Math.sin(frame*0.012+this.phase)*0.04;
+    // Hand wipe: clear region
+    this.cleared = Math.max(0, this.cleared-0.012);
+    tipPos.forEach(tp=>{
+      const d=Math.hypot(tp.x-this.x, tp.y-this.y);
+      if (d<70) this.cleared=Math.min(1,this.cleared+0.2);
+    });
+    // Slowly reform
+    if (this.cleared>0.8 && Math.random()<0.005) {
+      this.cleared=Math.max(0,this.cleared-0.1);
+    }
+    this.life = 1-this.cleared*0.9;
+  }
+  draw() {
+    const r = this.r*this.grown;
+    const op = this.opacity*this.life;
+    if (r<0.3||op<0.02) return;
+    ctx.save();
+
+    if (this.r>4) {
+      // ── Large drop: lens-like with highlight, shadow, trail ──
+      // Trail when sliding
+      if (this.slide && this.y-this.trailY>2) {
+        const trail=ctx.createLinearGradient(this.x,this.trailY,this.x,this.y);
+        trail.addColorStop(0,'rgba(200,215,230,0)');
+        trail.addColorStop(1,`rgba(200,215,230,${op*0.25})`);
+        ctx.beginPath();
+        ctx.moveTo(this.x-r*0.3, this.trailY);
+        ctx.lineTo(this.x-r*0.3, this.y);
+        ctx.lineTo(this.x+r*0.3, this.y);
+        ctx.lineTo(this.x+r*0.3, this.trailY);
+        ctx.fillStyle=trail; ctx.fill();
+      }
+      // Shadow
+      ctx.beginPath();
+      ctx.ellipse(this.x+r*0.15,this.y+r*0.18,r*0.85,r*0.82,0,0,Math.PI*2);
+      ctx.fillStyle=`rgba(160,180,200,${op*0.18})`; ctx.fill();
+      // Body
+      const bodyG=ctx.createRadialGradient(this.x-r*0.25,this.y-r*0.28,r*0.05,this.x,this.y,r);
+      bodyG.addColorStop(0,`rgba(255,255,255,${op*0.85})`);
+      bodyG.addColorStop(0.4,`rgba(220,232,245,${op*0.55})`);
+      bodyG.addColorStop(1,`rgba(180,205,225,${op*0.35})`);
+      ctx.beginPath(); ctx.arc(this.x,this.y,r,0,Math.PI*2);
+      ctx.fillStyle=bodyG; ctx.fill();
+      // Rim
+      ctx.beginPath(); ctx.arc(this.x,this.y,r,0,Math.PI*2);
+      ctx.strokeStyle=`rgba(180,205,225,${op*0.4})`; ctx.lineWidth=0.8; ctx.stroke();
+      // Specular highlight
+      ctx.beginPath();
+      ctx.ellipse(this.x-r*0.3,this.y-r*0.32,r*0.28,r*0.18,-0.4,0,Math.PI*2);
+      ctx.fillStyle=`rgba(255,255,255,${op*0.75})`; ctx.fill();
+      // Tiny secondary highlight
+      ctx.beginPath();
+      ctx.arc(this.x+r*0.25,this.y-r*0.15,r*0.1,0,Math.PI*2);
+      ctx.fillStyle=`rgba(255,255,255,${op*0.5})`; ctx.fill();
+    } else {
+      // ── Small droplet: simple circle with soft fill ──
+      const g=ctx.createRadialGradient(this.x-r*0.2,this.y-r*0.25,0,this.x,this.y,r);
+      g.addColorStop(0,`rgba(255,255,255,${op*0.9})`);
+      g.addColorStop(0.5,`rgba(215,228,240,${op*0.6})`);
+      g.addColorStop(1,`rgba(190,210,228,${op*0.3})`);
+      ctx.beginPath(); ctx.arc(this.x,this.y,r,0,Math.PI*2);
+      ctx.fillStyle=g; ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
+// Fog layer rendered onto offscreen canvas for performance
+let fogCanvas=null, fogCtx=null;
+let glassDrops=[];
+
+function buildFogLayer() {
+  fogCanvas=document.createElement('canvas');
+  fogCanvas.width=W; fogCanvas.height=H;
+  fogCtx=fogCanvas.getContext('2d');
+
+  // Base foggy film
+  const bg=fogCtx.createLinearGradient(0,0,W,H);
+  bg.addColorStop(0,'rgba(240,245,250,0.88)');
+  bg.addColorStop(0.5,'rgba(228,236,244,0.82)');
+  bg.addColorStop(1,'rgba(220,230,242,0.88)');
+  fogCtx.fillStyle=bg;
+  fogCtx.fillRect(CONTENT_LEFT,CONTENT_TOP,W-CONTENT_LEFT-CONTENT_RIGHT,H-CONTENT_TOP-CONTENT_BOTTOM);
+
+  // Soft cloud patches
+  for(let i=0;i<12;i++){
+    const cx2=CONTENT_LEFT+Math.random()*(W-CONTENT_LEFT-CONTENT_RIGHT);
+    const cy2=CONTENT_TOP+Math.random()*(H-CONTENT_TOP-CONTENT_BOTTOM);
+    const rr=60+Math.random()*120;
+    const grd=fogCtx.createRadialGradient(cx2,cy2,0,cx2,cy2,rr);
+    grd.addColorStop(0,'rgba(215,228,242,0.45)');
+    grd.addColorStop(1,'rgba(215,228,242,0)');
+    fogCtx.fillStyle=grd;
+    fogCtx.beginPath(); fogCtx.arc(cx2,cy2,rr,0,Math.PI*2); fogCtx.fill();
+  }
+}
+
+function initAct1() {
+  mistPoems=[];
+  const cw=W-CONTENT_LEFT-CONTENT_RIGHT;
+  const ch=H-CONTENT_TOP-CONTENT_BOTTOM;
+  const cols=3, rows=4;
+  poems.forEach((p,idx)=>{
+    const c=idx%cols, r=Math.floor(idx/cols);
+    const x=CONTENT_LEFT+(c+0.5)*(cw/cols)+(Math.random()-0.5)*cw*0.15;
+    const y=CONTENT_TOP+(r+0.5)*(ch/rows)+(Math.random()-0.5)*ch*0.12;
+    mistPoems.push(new MistPoem(p,x,y));
+  });
+  // Glass drops: ~250 tiny + ~18 large
+  glassDrops=[];
+  for(let i=0;i<268;i++) glassDrops.push(new GlassDrop());
+  buildFogLayer();
+}
+
+let fogRebuildTimer=0;
+function drawAct1() {
+  // ── 1. Clean white background ──
+  ctx.fillStyle='#f9fafb'; ctx.fillRect(0,0,W,H);
+
+  // ── 2. Poems (below fog) ──
+  mistPoems.forEach(p=>{ p.update(); p.draw(); });
+
+  // ── 3. Fog film (clip to content area) ──
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(CONTENT_LEFT,CONTENT_TOP,W-CONTENT_LEFT-CONTENT_RIGHT,H-CONTENT_TOP-CONTENT_BOTTOM);
+  ctx.clip();
+
+  // Slowly shifting fog base
+  const t=frame*0.003;
+  const shiftX=Math.sin(t)*12, shiftY=Math.cos(t*0.7)*8;
+  if (fogCanvas) {
+    ctx.globalAlpha=0.78;
+    ctx.drawImage(fogCanvas,shiftX,shiftY);
+    ctx.globalAlpha=1;
+  }
+
+  // Hand-wipe clearings
+  tipPos.forEach(tp=>{
+    const r=80;
+    const wipG=ctx.createRadialGradient(tp.x,tp.y,0,tp.x,tp.y,r);
+    wipG.addColorStop(0,'rgba(255,255,255,0.55)');
+    wipG.addColorStop(0.5,'rgba(255,255,255,0.15)');
+    wipG.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.globalCompositeOperation='destination-out';
+    ctx.fillStyle=wipG;
+    ctx.beginPath(); ctx.arc(tp.x,tp.y,r,0,Math.PI*2); ctx.fill();
+    ctx.globalCompositeOperation='source-over';
+  });
+
+  // ── 4. Glass droplets ──
+  glassDrops.forEach(d=>{ d.update(); d.draw(); });
+
+  // ── 5. Condensation breath-pulse: subtle fog breathes ──
+  const breathPulse=0.04*Math.sin(frame*0.018)+0.04;
+  ctx.fillStyle=`rgba(220,230,242,${breathPulse})`;
+  ctx.fillRect(CONTENT_LEFT,CONTENT_TOP,W-CONTENT_LEFT-CONTENT_RIGHT,H-CONTENT_TOP-CONTENT_BOTTOM);
+
+  ctx.restore();
+
+  // ── 6. Subtle grid under everything ──
+  ctx.strokeStyle='rgba(26,26,26,0.02)'; ctx.lineWidth=0.5;
+  for(let x=CONTENT_LEFT;x<W-CONTENT_RIGHT;x+=80){
+    ctx.beginPath(); ctx.moveTo(x,CONTENT_TOP); ctx.lineTo(x,H-CONTENT_BOTTOM); ctx.stroke();
+  }
+  for(let y=CONTENT_TOP;y<H-CONTENT_BOTTOM;y+=80){
+    ctx.beginPath(); ctx.moveTo(CONTENT_LEFT,y); ctx.lineTo(W-CONTENT_RIGHT,y); ctx.stroke();
+  }
+}
+
+// ═══════════════════════════════════════
+//  ACT 2 — Infinite "泪" waterfall
+// ═══════════════════════════════════════
+const healingLines = [
+  '你的眼泪，是身体最温柔的语言',
+  '哭泣是一种完整，不是软弱',
+  '泪水不需要被解释',
+  '感受到了，就已经足够',
+  '允许情绪流动，是一种勇气',
+  '你不必一直坚强',
+  '在流泪的瞬间，你更真实',
+  '身体在说话，请倾听它',
+];
+let triggeredLine = '你的眼泪，是身体最温柔的语言';
+
+class TearChar {
+  constructor(initY=false) { this.respawn(initY); }
+
+  respawn(initY=false) {
+    const cw = W-CONTENT_LEFT-CONTENT_RIGHT;
+    // Distribute across full width in randomised columns
+    this.x   = CONTENT_LEFT + Math.random()*cw;
+    // If initialising, scatter vertically so screen fills immediately
+    this.y   = initY
+                 ? CONTENT_TOP - Math.random()*(H-CONTENT_TOP-CONTENT_BOTTOM)*1.2
+                 : CONTENT_TOP - 10 - Math.random()*60;
+    // Size driven by slider but with inherent variety
+    const baseScale = 0.4 + tearSize*1.2;
+    this.sz  = (14 + Math.random()*38) * baseScale;
+    // Speed: slight randomness + slider
+    const speedScale = 0.35 + tearSpeed*1.4;
+    this.vy  = (0.55 + Math.random()*1.2) * speedScale;
+    this.vx  = (Math.random()-0.5)*0.35;
+    this.op  = 0.35 + Math.random()*0.5;
+    this.collected = false;
+    this.waveR = 0; this.waveOp = 0;
+    this.wx = 0; this.wy = 0;
+    this.phase = Math.random()*Math.PI*2;
+  }
+
+  update() {
+    if (this.collected) {
+      this.waveR  += 2.5;
+      this.waveOp  = Math.max(0, this.waveOp-0.018);
+      if (this.waveOp<=0) this.respawn();
+      return;
+    }
+
+    // Hand influences
+    if (handState==='fist') {
+      // scatter: push away from each fist-tip
+      tipPos.forEach(tp=>{
+        const dx=this.x-tp.x, dy=this.y-tp.y;
+        const d=Math.hypot(dx,dy);
+        if(d<150){ this.vx+=dx*0.003; this.vy-=0.5; }
+      });
+    }
+    if (handState==='open') {
+      tipPos.forEach(tp=>{
+        const dx=tp.x-this.x, dy=tp.y-this.y;
+        const d=Math.hypot(dx,dy);
+        if(d<160){ this.vy*=0.95; this.vx+=dx*0.0003; }
+      });
+    }
+
+    // Drift gently
+    this.vx += Math.sin(frame*0.008+this.phase)*0.005;
+    this.vy += 0.012; // gravity
+    this.x  += this.vx;
+    this.y  += this.vy;
+
+    // Clamp horizontal to content
+    if(this.x<CONTENT_LEFT)    this.x=CONTENT_LEFT;
+    if(this.x>W-CONTENT_RIGHT) this.x=W-CONTENT_RIGHT;
+
+    // Loop: when it exits bottom, respawn from top
+    if (this.y > H-CONTENT_BOTTOM+50) this.respawn();
+
+    // Touch detection
+    if (!this.collected) {
+      tipPos.forEach(tp=>{
+        const d=Math.hypot(tp.x-this.x, tp.y-this.y);
+        if(d < this.sz*0.65) {
+          this.collected=true;
+          this.wx=this.x; this.wy=this.y;
+          this.waveR=0; this.waveOp=0.7;
+          collectTear(this);
+        }
+      });
+    }
+  }
+
+  draw() {
+    // Wave ripple on collection
+    if (this.collected) {
+      if (this.waveOp>0) {
+        ctx.beginPath();
+        ctx.arc(this.wx,this.wy,this.waveR,0,Math.PI*2);
+        ctx.strokeStyle=`rgba(26,26,26,${this.waveOp})`;
+        ctx.lineWidth=1.8; ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(this.wx,this.wy,this.waveR*0.5,0,Math.PI*2);
+        ctx.strokeStyle=`rgba(26,26,26,${this.waveOp*0.4})`;
+        ctx.lineWidth=1; ctx.stroke();
+      }
+      return;
+    }
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, this.op);
+    ctx.font = `200 ${this.sz}px 'Noto Serif SC'`;
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillStyle='#1a1a1a';
+    ctx.fillText('泪', this.x, this.y);
+    ctx.restore();
+  }
+}
+
+// Pool: always WATERFALL_COUNT chars alive and falling
+const WATERFALL_COUNT = 40;
+let tearChars = [];
+
+function initAct2() {
+  tearChars = [];
+  collectedCount = 0; fistCount = 0; triggeredPoems = []; act2TouhedCount = 0;
+  updateCollector();
+  for(let i=0; i<WATERFALL_COUNT; i++) tearChars.push(new TearChar(true));
+}
+
+function collectTear(tc) {
+  collectedCount++;
+  act2TouhedCount++;
+  triggeredLine = healingLines[Math.floor(Math.random()*healingLines.length)];
+  triggeredPoems.push(triggeredLine);
+  updateCollector();
+  rainDrop();
+  showFloatText(triggeredLine, tc.wx, tc.wy, false);
+}
+
+function updateCollector() {
+  document.getElementById('collector-count').textContent = collectedCount;
+  document.getElementById('collector-fill').style.height = Math.min(100, collectedCount*4)+'%';
+  document.getElementById('collector-label').textContent = collectedCount>0 ? `已收集 ${collectedCount} 滴` : '尚未收集';
+}
+
+function drawAct2() {
+  // Background
+  ctx.fillStyle='#fafafa'; ctx.fillRect(0,0,W,H);
+  const vg=ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,W*0.7);
+  vg.addColorStop(0,'rgba(255,255,255,0)');
+  vg.addColorStop(1,'rgba(228,228,228,0.28)');
+  ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
+
+  // Keep pool full — respawning handled inside update()
+  // but ensure size always = WATERFALL_COUNT
+  while(tearChars.length < WATERFALL_COUNT) tearChars.push(new TearChar());
+
+  tearChars.forEach(t=>{ t.update(); t.draw(); });
+}
+
+// ═══════════════════════════════════════
+//  ACT 3 — Breathing meditation
+// ═══════════════════════════════════════
+let breathStrength = 0;
+let breathLabel = '准备';
+let breathParticles = [];
+
+class BreathParticle {
+  constructor(angle, r) {
+    this.angle = angle;
+    this.r = r;
+    this.vr = (Math.random()-0.5)*0.5;
+    this.va = (Math.random()-0.5)*0.005;
+    this.life = 0.8+Math.random()*0.2;
+    this.size = 1.5+Math.random()*2;
+  }
+  update(bs) {
+    this.r += bs*2;
+    this.angle += this.va;
+    this.life -= 0.008;
+  }
+  draw() {
+    const cx=contentCX(), cy=contentCY();
+    const x=cx+Math.cos(this.angle)*this.r;
+    const y=cy+Math.sin(this.angle)*this.r;
+    ctx.beginPath();
+    ctx.arc(x, y, this.size, 0, Math.PI*2);
+    ctx.fillStyle=`rgba(255,255,255,${this.life*0.6})`;
+    ctx.fill();
+    // Glow
+    ctx.beginPath();
+    ctx.arc(x, y, this.size*2.5, 0, Math.PI*2);
+    ctx.fillStyle=`rgba(255,255,255,${this.life*0.12})`;
+    ctx.fill();
+  }
+}
+
+const BREATH_PHASES = [
+  { label:'吸气　接纳所有下坠', frames:240, dir:1 },   // 4s
+  { label:'屏息　停驻此刻', frames:120, dir:0 },        // 2s
+  { label:'呼气　放下所有', frames:240, dir:-1 },       // 4s
+  { label:'放松　感受宁静', frames:120, dir:-0.5 },     // 2s
+];
+let bPhaseIdx=0, bPhaseFrame=0;
+const TOTAL_CYCLES = 5;
+let cyclesDone = 0;
+
+let lastBPhaseIdx = -1;
+
+function updateAct3() {
+  // Phase advance
+  bPhaseFrame++;
+  const phase = BREATH_PHASES[bPhaseIdx];
+  const t = bPhaseFrame / phase.frames;
+  breathLabel = phase.label;
+
+  if (bPhaseIdx===0) breathStrength = t;
+  else if (bPhaseIdx===1) breathStrength = 1;
+  else if (bPhaseIdx===2) breathStrength = 1 - t;
+  else breathStrength = 0;
+
+  // ── Phase transition: start/stop breath audio ──
+  if (bPhaseIdx !== lastBPhaseIdx) {
+    lastBPhaseIdx = bPhaseIdx;
+    stopAllBreathTones();
+    if (bPhaseIdx === 0) {
+      // INHALE — rising swell
+      startInhaleTone();
+    } else if (bPhaseIdx === 1) {
+      // HOLD — sustained hum
+      startHoldTone();
+    } else if (bPhaseIdx === 2) {
+      // EXHALE — descending sigh
+      startExhaleTone();
+    } else {
+      // REST — near-silence low hum
+      startRestTone();
+    }
+  }
+
+  // ── Cycle complete: bowl strike ──
+  if (bPhaseFrame >= phase.frames) {
+    bPhaseFrame = 0;
+    bPhaseIdx = (bPhaseIdx + 1) % BREATH_PHASES.length;
+    if (bPhaseIdx === 0) {
+      breathCount++;
+      bowlTone(breathCount);
+    }
+  }
+
+  // Update UI
+  document.getElementById('breath-label').textContent = breathLabel;
+  const secsLeft = Math.ceil((phase.frames - bPhaseFrame) / 60);
+  document.getElementById('breath-timer').textContent = secsLeft + 's';
+
+  // Particles during inhale/exhale
+  if (frame % 3 === 0) {
+    for (let i = 0; i < 3; i++) {
+      breathParticles.push(new BreathParticle(Math.random()*Math.PI*2, 55 + breathStrength*30));
+    }
+  }
+  breathParticles = breathParticles.filter(p => p.life > 0);
+  breathParticles.forEach(p => p.update(breathStrength));
+
+  // Auto complete
+  if (breathCount >= TOTAL_CYCLES && act === 3) {
+    stopAllBreathTones();
+    setTimeout(() => { if (act === 3) goToAct4(); }, 1500);
+  }
+}
+
+function drawAct3() {
+  // Black bg with subtle noise
+  ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H);
+  
+  const cx=contentCX(), cy=contentCY();
+  const baseR = 70;
+  const r = baseR + breathStrength*50;
+
+  // Outer glow
+  for(let i=4;i>=1;i--) {
+    const gr=ctx.createRadialGradient(cx,cy,0,cx,cy,r*i);
+    gr.addColorStop(0, `rgba(255,255,255,${0.04*breathStrength/i})`);
+    gr.addColorStop(1, 'transparent');
+    ctx.fillStyle=gr; ctx.fillRect(CONTENT_LEFT,CONTENT_TOP,W-CONTENT_LEFT-CONTENT_RIGHT,H-CONTENT_TOP-CONTENT_BOTTOM);
+  }
+  // Rings
+  for(let i=1;i<=4;i++) {
+    const ri = r*(i/4);
+    const op = (0.1+breathStrength*0.25)/i;
+    ctx.beginPath(); ctx.arc(cx,cy,ri,0,Math.PI*2);
+    ctx.strokeStyle=`rgba(255,255,255,${op})`; ctx.lineWidth=1.5; ctx.stroke();
+  }
+  // Particles
+  breathParticles.forEach(p=>p.draw());
+  // Orbiting dots
+  const dotCount=12;
+  for(let i=0;i<dotCount;i++) {
+    const a=(i/dotCount)*Math.PI*2 + frame*0.005;
+    const dr = r+20+Math.sin(frame*0.02+i)*8;
+    const x=cx+Math.cos(a)*dr, y=cy+Math.sin(a)*dr;
+    const op=0.15+breathStrength*0.35;
+    ctx.beginPath(); ctx.arc(x,y,2,0,Math.PI*2);
+    ctx.fillStyle=`rgba(255,255,255,${op})`; ctx.fill();
+  }
+  // Center dot
+  ctx.beginPath(); ctx.arc(cx,cy,4,0,Math.PI*2);
+  ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.fill();
+
+  // Progress text (top center)
+  ctx.save();
+  ctx.font='200 11px "Noto Serif SC"';
+  ctx.fillStyle='rgba(255,255,255,0.3)';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(`${breathCount} / ${TOTAL_CYCLES} 次`, cx, CONTENT_TOP+30);
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════
+//  ACT 4 — Completion
+// ═══════════════════════════════════════
+function showAct4() {
+  const poem = triggeredPoems.length > 0
+    ? triggeredPoems[Math.floor(Math.random()*triggeredPoems.length)]
+    : '泪水见证，每一次你选择继续';
+
+  document.getElementById('stat1').textContent = collectedCount;
+  document.getElementById('stat-poem').textContent = `"${poem}"`;
+  document.getElementById('stat2').textContent = breathCount;
+  document.getElementById('stat3').textContent = Math.floor(breathCount*8);
+  document.getElementById('stat4').textContent = Math.min(100, fistCount*20)+'%';
+
+  // Heart rate chart
+  const chart = document.getElementById('stat-chart');
+  chart.innerHTML='';
+  for(let i=0;i<10;i++) {
+    const bar=document.createElement('div');
+    bar.className='chart-bar';
+    const h = Math.max(5, 28 - i*2.2 + Math.sin(i)*3);
+    bar.style.height=h+'px';
+    chart.appendChild(bar);
+  }
+
+  document.getElementById('completion-overlay').classList.add('show');
+}
+
+// ═══════════════════════════════════════
+//  FLOAT TEXT
+// ═══════════════════════════════════════
+let lastFloat=0;
+function showFloatText(text, x, y, dark=false) {
+  if (Date.now()-lastFloat<2000) return;
+  const el=document.createElement('div');
+  el.className='float-text'+(dark?' dark':'');
+  el.textContent=text;
+  el.style.cssText=`left:${Math.max(CONTENT_LEFT+10, Math.min(x,W-CONTENT_RIGHT-200))}px;top:${Math.max(CONTENT_TOP+10,y-60)}px;`;
+  document.body.appendChild(el);
+  lastFloat=Date.now();
+  setTimeout(()=>el.remove(), 4500);
+}
+
+// ═══════════════════════════════════════
+//  TRANSITIONS & BUTTONS
+// ═══════════════════════════════════════
+const quotesByAct = {
+  1: { text:'当身体不是我们「拥有」的东西，\n而是我们「是」的东西。', src:'— 梅洛·庞蒂' },
+  2: { text:'当语言走到尽头，\n身体开始说话。', src:'— 梅洛·庞蒂' },
+  3: { text:'感知不是思想对世界的投射，\n而是身体与世界的相遇。', src:'— 梅洛·庞蒂' },
+  4: { text:'身体是一部始终在说话的诗，\n只是我们很少聆听。', src:'— 梅洛·庞蒂' },
+};
+const hintsByAct = {
+  1: ['在空中挥手擦开水雾','触碰诗句，感受文字','点击底部按钮继续'],
+  2: ['指尖触碰「泪」字收集','张开手掌，泪字聚集','握拳驱散所有泪字'],
+  3: ['跟随光球呼吸节奏','吸气4秒，屏息2秒','呼气4秒，放松2秒'],
+  4: ['本次疗愈记录','点击「回到诗里」重新体验','感谢你的信任与勇气'],
+};
+
+function updateUIForAct(a) {
+  // Nodes
+  [1,2,3,4].forEach(i=>{
+    const n=document.getElementById('node'+i);
+    n.className='act-node'+(i<a?' done':i===a?' active':'');
+  });
+  // Quote
+  const q=quotesByAct[a];
+  document.getElementById('quote-text').textContent=q.text;
+  document.querySelector('.quote-src').textContent=q.src;
+  // Hints
+  const h=hintsByAct[a];
+  ['hint1','hint2','hint3'].forEach((id,i)=>{
+    document.getElementById(id).innerHTML=`<span class="hint-icon">✦</span>${h[i]||''}`;
+  });
+  // Breath guide
+  document.getElementById('breath-guide').style.display = a===3 ? 'block' : 'none';
+  // Sidebars
+  document.getElementById('sidebar').style.display = a===4 ? 'none' : '';
+  document.getElementById('left-panel').style.display = a===4 ? 'none' : '';
+  // Header & bottom color
+  const header=document.getElementById('header');
+  const bottomBar=document.getElementById('bottom-bar');
+  const soundBtn=document.getElementById('sound-btn');
+  if (a===3) {
+    header.style.background='rgba(0,0,0,0.85)';
+    header.style.borderBottomColor='rgba(255,255,255,0.08)';
+    header.style.color='rgba(255,255,255,0.6)';
+    bottomBar.style.background='rgba(0,0,0,0.85)';
+    bottomBar.style.borderTopColor='rgba(255,255,255,0.08)';
+    document.querySelector('.header-title').style.color='rgba(255,255,255,0.7)';
+    document.querySelector('.header-sub').style.color='rgba(255,255,255,0.3)';
+    soundBtn.style.borderColor='rgba(255,255,255,0.15)';
+    soundBtn.querySelector('svg').style.stroke='rgba(255,255,255,0.6)';
+    document.getElementById('bottom-hint').style.color='rgba(255,255,255,0.3)';
+  } else {
+    header.style.background='rgba(255,255,255,0.92)';
+    header.style.borderBottomColor='var(--faint)';
+    header.style.color='';
+    bottomBar.style.background='rgba(255,255,255,0.92)';
+    bottomBar.style.borderTopColor='var(--faint)';
+    document.querySelector('.header-title').style.color='var(--ink)';
+    document.querySelector('.header-sub').style.color='var(--dim)';
+    soundBtn.style.borderColor='var(--faint)';
+    soundBtn.querySelector('svg').style.stroke='var(--ink)';
+    document.getElementById('bottom-hint').style.color='var(--dim)';
+  }
+}
+
+const btnLabels = {
+  1:['听听身体在说什么？', '用手指擦开水雾，听听身体想说什么'],
+  2:['开始呼吸冥想 →', `收集泪水，感受情绪的流动`],
+  3:['查看疗愈印记 →', '跟随呼吸节奏，完成 '+TOTAL_CYCLES+' 次循环'],
+  4:['回到诗里', '疗愈完成，感谢你的信任'],
+};
+
+function updateBtn() {
+  const [bl, bh]=btnLabels[act]||['继续',''];
+  document.getElementById('main-btn').textContent=bl;
+  document.getElementById('bottom-hint').textContent=bh;
+}
+
+async function handleMainBtn() {
+  initAudio();
+  if (act===1) await goToAct2();
+  else if (act===2) await goToAct3();
+  else if (act===3) goToAct4();
+  else if (act===4) returnToAct1();
+}
+
+async function fade(toDark, dur=800) {
+  const ov=document.getElementById('fade-overlay');
+  ov.classList.toggle('dark', toDark);
+  ov.classList.add('active');
+  await new Promise(r=>setTimeout(r,dur));
+}
+async function unfade(dur=800) {
+  const ov=document.getElementById('fade-overlay');
+  ov.classList.remove('active');
+  await new Promise(r=>setTimeout(r,dur));
+}
+
+async function goToAct2() {
+  await fade(false, 700);
+  act=2; initAct2();
+  startAct2Music(); startAmbientRain();
+  updateUIForAct(2); updateBtn();
+  await unfade(700);
+}
+
+async function goToAct3() {
+  await fade(true, 800);
+  act=3; bPhaseIdx=0; bPhaseFrame=0; breathCount=0;
+  breathParticles=[]; lastBPhaseIdx=-1;
+  stopAllMusic(); stopAmbientRain();
+  updateUIForAct(3); updateBtn();
+  await unfade(800);
+  bowlTone(0);
+}
+
+async function goToAct4() {
+  if (act===4) return;
+  await fade(true, 800);
+  act=4;
+  updateUIForAct(4); updateBtn();
+  await unfade(600);
+  showAct4();
+}
+
+async function returnToAct1() {
+  document.getElementById('completion-overlay').classList.remove('show');
+  await fade(false, 800);
+  act=1; collectedCount=0; fistCount=0; breathCount=0;
+  triggeredPoems=[]; act2TouhedCount=0;
+  updateCollector();
+  stopAllMusic(); stopAmbientRain();
+  initAct1(); updateUIForAct(1); updateBtn();
+  await unfade(700);
+  startAct1Music();
+}
+
+// ═══════════════════════════════════════
+//  MAIN LOOP
+// ═══════════════════════════════════════
+function loop() {
+  frame++;
+  if (act===1) drawAct1();
+  else if (act===2) drawAct2();
+  else if (act===3) { updateAct3(); drawAct3(); }
+  else if (act===4) {
+    ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H);
+  }
+  requestAnimationFrame(loop);
+}
+
+// ═══════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════
+async function init() {
+  initAct1();
+  updateUIForAct(1); updateBtn();
+  await initMediaPipe();
+  loop();
+}
+
+// Start Act 1 drone music after first user interaction
+let musicStarted = false;
+function maybeStartMusic() {
+  if (musicStarted) return;
+  musicStarted = true;
+  initAudio();
+  if (act===1) startAct1Music();
+}
+document.addEventListener('click', maybeStartMusic, { once:true });
+document.addEventListener('touchstart', maybeStartMusic, { once:true });
+
+window.addEventListener('load', init);
+</script>
+</body>
+</html>
